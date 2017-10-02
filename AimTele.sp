@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.3"
+#define PLUGIN_VERSION "1.4"
 
 #include <sourcemod>
 #include <sdktools>
@@ -16,8 +16,11 @@ EngineVersion g_Game;
 ConVar TeleCount;
 ConVar TeleBonus;
 ConVar TeleTeam;
+//ConVar TeleCD;
 
 int iTeleCount[MAXPLAYERS + 1];
+bool isStuck[MAXPLAYERS+1];
+float Ground_Velocity[3] = {0.0, 0.0, -300.0};
 
 public Plugin myinfo = 
 {
@@ -39,6 +42,7 @@ public void OnPluginStart()
 	TeleTeam = CreateConVar("sm_aim_tele_team", "1", "Team(s) that can use Teleport. 0 = Both, 1 = Terrorists, 2 = Counter-Terrorists", 0, true, 0.0, true, 2.0);
 	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
 	TeleBonus = CreateConVar("sm_aim_tele_bonus", "1", "Amount of Teleports to increase upon getting a kill.", 0, true, 0.0, false);
+	//TeleCD = CreateConVar("sm_aim_tele_cooldown", "5", "Seconds to wait before using another Teleport.", 0, true, 0.0, false);
 	
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("player_death", Event_PlayerDeath);
@@ -94,6 +98,7 @@ public void PerformTeleport(int target, float pos[3])
 	TeleportEntity(target, pos, NULL_VECTOR, NULL_VECTOR);
 	pos[2]+=40.0;
 	--iTeleCount[target];
+	CheckStuck(target);
 }
 
 public void SetTeleportEndPoint(int client)
@@ -127,6 +132,156 @@ public void SetTeleportEndPoint(int client)
 public bool TraceEntityFilterPlayer(int entity, int contentsMask)
 {
 	return entity > GetMaxClients() || !entity;
+}
+
+public void CheckStuck(int client)
+{
+	isStuck[client] = false;
+	isStuck[client] = CheckIfPlayerIsStuck(client);
+	CheckIfPlayerCanMove(client, 0, 500.0, 0.0, 0.0);
+}
+
+stock bool CheckIfPlayerIsStuck(int client)
+{
+	float vecMin[3];
+	float vecMax[3];
+	float vecOrigin[3];
+	
+	GetClientMins(client, vecMin);
+	GetClientMaxs(client, vecMax);
+	GetClientAbsOrigin(client, vecOrigin);
+	
+	TR_TraceHullFilter(vecOrigin, vecOrigin, vecMin, vecMax, MASK_SOLID, TraceEntityFilterSolid);
+	return TR_DidHit();
+}
+
+public void CheckIfPlayerCanMove(int client, int testID, float X, float Y, float Z)
+{
+	float vecVelo[3];
+	float vecOrigin[3];
+	GetClientAbsOrigin(client, vecOrigin);
+	
+	vecVelo[0] = X;
+	vecVelo[1] = Y;
+	vecVelo[2] = Z;
+	
+	SetEntPropVector(client, Prop_Data, "m_vecBaseVelocity", vecVelo);
+	
+	DataPack TimerDataPack;
+	CreateDataTimer(0.1, TimerWait, TimerDataPack); 
+	WritePackCell(TimerDataPack, client);
+	WritePackCell(TimerDataPack, testID);
+	WritePackFloat(TimerDataPack, vecOrigin[0]);
+	WritePackFloat(TimerDataPack, vecOrigin[1]);
+	WritePackFloat(TimerDataPack, vecOrigin[2]);
+}
+
+public Action TimerWait(Handle timer, Handle data)
+{	
+	float vecOrigin[3];
+	float vecOriginAfter[3];
+	
+	ResetPack(data, false);
+	int client 		= ReadPackCell(data);
+	int testID 			= ReadPackCell(data);
+	vecOrigin[0]		= ReadPackFloat(data);
+	vecOrigin[1]		= ReadPackFloat(data);
+	vecOrigin[2]		= ReadPackFloat(data);
+	
+	
+	GetClientAbsOrigin(client, vecOriginAfter);
+	
+	if(GetVectorDistance(vecOrigin, vecOriginAfter, false) < 10.0) // Can't move
+	{
+		if(testID == 0)
+			CheckIfPlayerCanMove(client, 1, 0.0, 0.0, -500.0);	// Jump
+		else if(testID == 1)
+			CheckIfPlayerCanMove(client, 2, -500.0, 0.0, 0.0);
+		else if(testID == 2)
+			CheckIfPlayerCanMove(client, 3, 0.0, 500.0, 0.0);
+		else if(testID == 3)
+			CheckIfPlayerCanMove(client, 4, 0.0, -500.0, 0.0);
+		else if(testID == 4)
+			CheckIfPlayerCanMove(client, 5, 0.0, 0.0, 300.0);
+		else
+			FixPlayerPosition(client);
+	}
+}
+
+public void FixPlayerPosition(int client)
+{
+	if(isStuck[client])
+	{
+		float pos_Z = 0.1;
+		
+		while(pos_Z <= 200 && !TryFixPosition(client, 10.0, pos_Z))
+		{	
+			pos_Z = -pos_Z;
+			if(pos_Z > 0.0)
+				pos_Z += 20;
+		}
+		
+		if(!CheckIfPlayerIsStuck(client))
+			CheckStuck(client);
+	}
+	else
+	{
+		Handle trace = INVALID_HANDLE;
+		float vecOrigin[3];
+		float vecAngle[3];
+		
+		GetClientAbsOrigin(client, vecOrigin);
+		vecAngle[0] = 90.0;
+		trace = TR_TraceRayFilterEx(vecOrigin, vecAngle, MASK_SOLID, RayType_Infinite, TraceEntityFilterSolid);		
+		if(!TR_DidHit(trace)) 
+		{
+			CloseHandle(trace);
+			return;
+		}
+		
+		TR_GetEndPosition(vecOrigin, trace);
+		CloseHandle(trace);
+		vecOrigin[2] += 10.0;
+		TeleportEntity(client, vecOrigin, NULL_VECTOR, Ground_Velocity);
+		
+		CheckStuck(client);
+	}
+}
+
+public bool TryFixPosition(int client, float Radius, float pos_Z)
+{
+	float DegreeAngle;
+	float vecPosition[3];
+	float vecOrigin[3];
+	float vecAngle[3];
+	
+	GetClientAbsOrigin(client, vecOrigin);
+	GetClientEyeAngles(client, vecAngle);
+	vecPosition[2] = vecOrigin[2] + pos_Z;
+
+	DegreeAngle = -180.0;
+	while(DegreeAngle < 180.0)
+	{
+		vecPosition[0] = vecOrigin[0] + Radius * Cosine(DegreeAngle * FLOAT_PI / 180); // convert angle in radian
+		vecPosition[1] = vecOrigin[1] + Radius * Sine(DegreeAngle * FLOAT_PI / 180);
+		
+		TeleportEntity(client, vecPosition, vecAngle, Ground_Velocity);
+		if(!CheckIfPlayerIsStuck(client))
+			return true;
+		
+		DegreeAngle += 10.0; // + 10°
+	}
+	
+	TeleportEntity(client, vecOrigin, vecAngle, Ground_Velocity);
+	if(Radius <= 200)
+		return TryFixPosition(client, Radius + 20, pos_Z);
+	
+	return false;
+}
+
+public bool TraceEntityFilterSolid(int entity, int contentsMask) 
+{
+	return entity > 1;
 }
 
 stock bool IsValidClient(int client)
