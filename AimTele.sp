@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.4"
+#define PLUGIN_VERSION "1.6"
 
 #include <sourcemod>
 #include <sdktools>
@@ -16,9 +16,10 @@ EngineVersion g_Game;
 ConVar TeleCount;
 ConVar TeleBonus;
 ConVar TeleTeam;
-//ConVar TeleCD;
+ConVar TeleCD;
 
 int iTeleCount[MAXPLAYERS + 1];
+float LastTele[MAXPLAYERS + 1];
 bool isStuck[MAXPLAYERS+1];
 float Ground_Velocity[3] = {0.0, 0.0, -300.0};
 
@@ -42,11 +43,20 @@ public void OnPluginStart()
 	TeleTeam = CreateConVar("sm_aim_tele_team", "1", "Team(s) that can use Teleport. 0 = Both, 1 = Terrorists, 2 = Counter-Terrorists", 0, true, 0.0, true, 2.0);
 	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
 	TeleBonus = CreateConVar("sm_aim_tele_bonus", "1", "Amount of Teleports to increase upon getting a kill.", 0, true, 0.0, false);
-	//TeleCD = CreateConVar("sm_aim_tele_cooldown", "5", "Seconds to wait before using another Teleport.", 0, true, 0.0, false);
+	TeleCD = CreateConVar("sm_aim_tele_cooldown", "5", "Seconds to wait before using another Teleport.", 0, true, 0.0, false);
 	
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("player_death", Event_PlayerDeath);
+	HookEvent("player_spawn", Event_PlayerSpawn);
 	AddCommandListener(Command_LookAtWeapon, "+lookatweapon");
+	SetHudTextParams(-1.0, 0.7, 3.0, 255, 150, 0, 255, 0, 0.0, 0.0, 0.0);
+}
+
+public Action Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "userid"));
+	if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(client) == (GetConVarInt(TeleTeam) + 1))
+		ShowHudText(client, 1, "Teleports Remaining: %i", iTeleCount[client]);
 }
 
 public Action Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
@@ -56,6 +66,7 @@ public Action Event_RoundStart(Event event, const char[] name, bool dontBroadcas
 		if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(i) == (GetConVarInt(TeleTeam) + 1))
 		{
 			iTeleCount[i] = GetConVarInt(TeleCount);
+			LastTele[i] = GetGameTime();
 		}
 	}
 }
@@ -64,7 +75,7 @@ public Action Command_LookAtWeapon(int client, const char[] command, int argc)
 {
 	if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(client) == (GetConVarInt(TeleTeam) + 1))
 	{
-		if(iTeleCount[client] > 0)
+		if(iTeleCount[client] > 0 && GetGameTime() - LastTele[client] > GetConVarInt(TeleCD))
 		{
 			SetTeleportEndPoint(client);
 			return Plugin_Handled;
@@ -84,6 +95,7 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
 		if(GetClientTeam(victim) != GetClientTeam(attacker))
 		{
 			iTeleCount[attacker] += GetConVarInt(TeleBonus);
+			ShowHudText(attacker, 1, "Teleports Remaining: %i", iTeleCount[attacker]);
 		}
 	}
 }
@@ -98,6 +110,8 @@ public void PerformTeleport(int target, float pos[3])
 	TeleportEntity(target, pos, NULL_VECTOR, NULL_VECTOR);
 	pos[2]+=40.0;
 	--iTeleCount[target];
+	LastTele[target] = GetGameTime();
+	ShowHudText(target, 1, "Teleports Remaining: %i", iTeleCount[target]);
 	CheckStuck(target);
 }
 
