@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.1"
+#define PLUGIN_VERSION "1.2"
 
 #include <sourcemod>
 #include <sdktools>
@@ -14,6 +14,7 @@
 EngineVersion g_Game;
 
 ConVar TeleCount;
+ConVar TeleBonus;
 
 int iTeleCount[MAXPLAYERS + 1];
 
@@ -35,9 +36,11 @@ public void OnPluginStart()
 	}
 	CreateConVar("sm_aim_tele_version", PLUGIN_VERSION, "Aim Teleport Version", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
 	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
+	TeleBonus = CreateConVar("sm_aim_tele_bonus", "1", "Amount of Teleports to increase upon getting a kill.", 0, true, 0.0, false);
 	
 	
 	HookEvent("round_start", Event_RoundStart);
+	HookEvent("player_death", Event_PlayerDeath);
 	AddCommandListener(Command_LookAtWeapon, "+lookatweapon");
 }
 
@@ -60,6 +63,14 @@ public Action Command_LookAtWeapon(int client, const char[] command, int argc)
 	
 	
 	return Plugin_Handled;
+}
+
+public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
+{
+	int attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+	int victim = GetClientOfUserId(GetEventInt(event, "userid"));
+	if(GetClientTeam(attacker) == CS_TEAM_T && GetClientTeam(victim) == CS_TEAM_CT)
+		iTeleCount[attacker] += GetConVarInt(TeleBonus);
 }
 
 public void PerformTeleport(int target, float pos[3])
