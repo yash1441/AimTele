@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.2"
+#define PLUGIN_VERSION "1.3"
 
 #include <sourcemod>
 #include <sdktools>
@@ -15,6 +15,7 @@ EngineVersion g_Game;
 
 ConVar TeleCount;
 ConVar TeleBonus;
+ConVar TeleTeam;
 
 int iTeleCount[MAXPLAYERS + 1];
 
@@ -35,9 +36,9 @@ public void OnPluginStart()
 		SetFailState("This plugin is for CSGO/CSS only.");	
 	}
 	CreateConVar("sm_aim_tele_version", PLUGIN_VERSION, "Aim Teleport Version", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
+	TeleTeam = CreateConVar("sm_aim_tele_team", "1", "Team(s) that can use Teleport. 0 = Both, 1 = Terrorists, 2 = Counter-Terrorists", 0, true, 0.0, true, 2.0);
 	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
 	TeleBonus = CreateConVar("sm_aim_tele_bonus", "1", "Amount of Teleports to increase upon getting a kill.", 0, true, 0.0, false);
-	
 	
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("player_death", Event_PlayerDeath);
@@ -48,29 +49,39 @@ public Action Event_RoundStart(Event event, const char[] name, bool dontBroadcas
 {
 	LoopClients(i)
 	{
-		iTeleCount[i] = GetConVarInt(TeleCount);
+		if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(i) == (GetConVarInt(TeleTeam) + 1))
+		{
+			iTeleCount[i] = GetConVarInt(TeleCount);
+		}
 	}
 }
 
 public Action Command_LookAtWeapon(int client, const char[] command, int argc)
 {
-	if(GetClientTeam(client) != CS_TEAM_T && iTeleCount[client] > 0)
+	if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(client) == (GetConVarInt(TeleTeam) + 1))
 	{
-		return Plugin_Continue;	
+		if(iTeleCount[client] > 0)
+		{
+			SetTeleportEndPoint(client);
+			return Plugin_Handled;
+		}
+		else return Plugin_Continue;
 	}
-	
-	SetTeleportEndPoint(client);
-	
-	
-	return Plugin_Handled;
+	else return Plugin_Continue;
 }
 
 public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
 	int attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
 	int victim = GetClientOfUserId(GetEventInt(event, "userid"));
-	if(GetClientTeam(attacker) == CS_TEAM_T && GetClientTeam(victim) == CS_TEAM_CT)
-		iTeleCount[attacker] += GetConVarInt(TeleBonus);
+	
+	if(GetConVarInt(TeleTeam) == 0 || GetClientTeam(attacker) == (GetConVarInt(TeleTeam) + 1))
+	{
+		if(GetClientTeam(victim) != GetClientTeam(attacker))
+		{
+			iTeleCount[attacker] += GetConVarInt(TeleBonus);
+		}
+	}
 }
 
 public void PerformTeleport(int target, float pos[3])
