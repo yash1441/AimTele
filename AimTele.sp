@@ -1,18 +1,21 @@
 #pragma semicolon 1
 
-#define DEBUG
-
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.0"
+#define PLUGIN_VERSION "1.1"
 
 #include <sourcemod>
 #include <sdktools>
 #include <cstrike>
-//#include <sdkhooks>
 
 #pragma newdecls required
 
+#define LoopClients(%1) for(int %1 = 1;%1 <= MaxClients;%1++) if(IsValidClient(%1))
+
 EngineVersion g_Game;
+
+ConVar TeleCount;
+
+int iTeleCount[MAXPLAYERS + 1];
 
 public Plugin myinfo = 
 {
@@ -31,13 +34,24 @@ public void OnPluginStart()
 		SetFailState("This plugin is for CSGO/CSS only.");	
 	}
 	CreateConVar("sm_aim_tele_version", PLUGIN_VERSION, "Aim Teleport Version", FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
+	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
 	
+	
+	HookEvent("round_start", Event_RoundStart);
 	AddCommandListener(Command_LookAtWeapon, "+lookatweapon");
+}
+
+public Action Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+	LoopClients(i)
+	{
+		iTeleCount[i] = GetConVarInt(TeleCount);
+	}
 }
 
 public Action Command_LookAtWeapon(int client, const char[] command, int argc)
 {
-	if(GetClientTeam(client) != CS_TEAM_T)
+	if(GetClientTeam(client) != CS_TEAM_T && iTeleCount[client] > 0)
 	{
 		return Plugin_Continue;	
 	}
@@ -57,6 +71,7 @@ public void PerformTeleport(int target, float pos[3])
 	
 	TeleportEntity(target, pos, NULL_VECTOR, NULL_VECTOR);
 	pos[2]+=40.0;
+	--iTeleCount[target];
 }
 
 public void SetTeleportEndPoint(int client)
@@ -90,4 +105,12 @@ public void SetTeleportEndPoint(int client)
 public bool TraceEntityFilterPlayer(int entity, int contentsMask)
 {
 	return entity > GetMaxClients() || !entity;
+}
+
+stock bool IsValidClient(int client)
+{
+	if (client <= 0)return false;
+	if (client > MaxClients)return false;
+	if (!IsClientConnected(client))return false;
+	return IsClientInGame(client);
 }
