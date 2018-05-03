@@ -1,11 +1,12 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.6"
+#define PLUGIN_VERSION "1.8"
 
 #include <sourcemod>
 #include <sdktools>
 #include <cstrike>
+#include <emitsoundany>
 
 #pragma newdecls required
 
@@ -17,6 +18,7 @@ ConVar TeleCount;
 ConVar TeleBonus;
 ConVar TeleTeam;
 ConVar TeleCD;
+ConVar TeleSound;
 
 int iTeleCount[MAXPLAYERS + 1];
 float LastTele[MAXPLAYERS + 1];
@@ -44,12 +46,21 @@ public void OnPluginStart()
 	TeleCount = CreateConVar("sm_aim_tele_count", "3", "Amount of Teleports available at round start.", 0, true, 0.0, false);
 	TeleBonus = CreateConVar("sm_aim_tele_bonus", "1", "Amount of Teleports to increase upon getting a kill.", 0, true, 0.0, false);
 	TeleCD = CreateConVar("sm_aim_tele_cooldown", "5", "Seconds to wait before using another Teleport.", 0, true, 0.0, false);
+	TeleSound = CreateConVar("sm_aim_tele_sound", "nightcrawler/teleport.mp3", "Path of the sound to be played upon teleporting.");
 	
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("player_death", Event_PlayerDeath);
 	HookEvent("player_spawn", Event_PlayerSpawn);
 	AddCommandListener(Command_LookAtWeapon, "+lookatweapon");
-	SetHudTextParams(-1.0, 0.7, 3.0, 255, 150, 0, 255, 0, 0.0, 0.0, 0.0);
+	SetHudTextParams(-1.0, 0.7, 3.0, 0, 255, 0, 255, 0, 0.0, 0.0, 0.0);
+}
+
+public void OnMapStart()
+{
+	char soundName[512];
+	GetConVarString(TeleSound, soundName, sizeof(soundName));
+	AddFileToDownloadsTable(soundName);
+	PrecacheSoundAny(soundName);
 }
 
 public Action Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
@@ -112,6 +123,15 @@ public void PerformTeleport(int target, float pos[3])
 	--iTeleCount[target];
 	LastTele[target] = GetGameTime();
 	ShowHudText(target, 1, "Teleports Remaining: %i", iTeleCount[target]);
+	char soundName[512];
+	GetConVarString(TeleSound, soundName, sizeof(soundName));
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if(IsValidClient(i))
+		{
+			EmitSoundToAllAny(soundName, _, _, _, _, _, _, _, pos);
+		}
+	}
 	CheckStuck(target);
 }
 
