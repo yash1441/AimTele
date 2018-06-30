@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.8"
+#define PLUGIN_VERSION "1.9"
 
 #include <sourcemod>
 #include <sdktools>
@@ -58,8 +58,10 @@ public void OnPluginStart()
 public void OnMapStart()
 {
 	char soundName[512];
+	char TempSound[128];
 	GetConVarString(TeleSound, soundName, sizeof(soundName));
-	AddFileToDownloadsTable(soundName);
+	FormatEx(TempSound, sizeof(TempSound), "sound/%s", soundName);
+	AddFileToDownloadsTable(TempSound);
 	PrecacheSoundAny(soundName);
 }
 
